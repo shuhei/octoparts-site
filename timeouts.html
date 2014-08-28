@@ -27,8 +27,8 @@
       <div class="row">
 
         <div class="col-md-3">
-          <div class="sidebar">
-<a href="./">              <h4>TODO Octoparts logo here</h4>
+          <div id="sidebar" style="padding-top: 20px;">
+<a href="./">                <img width="220px" style="padding-left: 15px;" src="img/octo_logo1.png" />
 </a>            
             <ul class="nav nav-pills nav-stacked">
               <li ><a href="getting-started.html">Getting started</a></a></li>
@@ -47,7 +47,40 @@
 
         <div class="col-md-9">
           <h1>Timeouts</h1>
-          <p>TODO explain about caching (copy and translate from wiki)</p>
+          <h2>Timeout types</h2>
+
+<p>In Octoparts, there are 2 types of timeouts:</p>
+
+<ol>
+<li><code>HystrixCommand</code> timeout, which allows Octoparts to fail fast and shed load in an isolated manner for each registered endpoint.</li>
+<li>Request timeout, which allows Octoparts (and subsequently the service that invokes Octoparts) to guarantee responsiveness.</li>
+</ol>
+
+<h3>Hystrix timeout</h3>
+
+<h4>Octoparts and Hystrix</h4>
+
+<p>Octoparts wraps all requests to registered backend endpoints in a <a href="https://netflix.github.io/Hystrix/javadoc/index.html?com/netflix/hystrix/HystrixCommand.html"><code>HystrixCommand</code></a> object, which is a construct used to run a block of (usually blocking) code and return the result asynchronously in a resilient and responsive fashion (to learn more about Hystrix and all the benefits of using it, read the <a href="https://github.com/Netflix/Hystrix/wiki">Hystrix wiki</a>).</p>
+
+<p>Part of the constructor arguments of a <code>HystrixCommand</code> is a timeout value in milliseconds, which defines how long the block of code inside the command has to finish processing.</p>
+
+<h4>HystrixCommand processing</h4>
+
+<p>Once a <code>HystrixCommand</code> is instantiated with our backend endpoint call as the block of code to be run, we invoke the command, getting back an asynchronous<code>Future</code> result.</p>
+
+<p><em>However</em>, in the Hystrix world, the command is executed synchronously (using a thread from another threadpool). If the command takes longer than the timeout duration to finish, Hystrix will cause the <code>Future</code> return value to be a <code>TimeoutException</code> and returns the thread back to the threadpool.</p>
+
+<h3>Request timeout</h3>
+
+<p>Octoparts allows you to specify, on a per <code>AggregateRequest</code> level, the maximum duration you want the server to &ldquo;wait&rdquo; before replying with an <code>AggregateResponse</code>. This is done by specifying a value in the optional <code>timeoutMs</code> field in the <code>requestMeta</code> field of an <code>AggregateResponse</code>. <em>However</em>, by default, there is 5 second value specified for <code>maximumAggReqTimeout</code>, and the lower value between what is specified in <code>timeoutMs</code> and <code>maximumAggReqTimeout</code> is used as the timeout duration for a given request.</p>
+
+<p>During the processing of an <code>AggregateRequest</code>, each <code>PartRequest</code> is processed asynchronously in parallel (as specified in <a href="internals.html">Internals</a>), and those that don&rsquo;t complete within the aforementioned timeout duration are completed using a TimedoutException (those that finish processing within the duration are left alone).</p>
+
+<p>Those familiar with Scala may want to checkout our <code>RichFutureWithTimeout</code> enrichment to see how this is done without blocking our request thread.</p>
+
+<h2>Motivation for having 2 types of timeouts</h2>
+
+<p>Asides from the two types serving 2 different functional requirements, the separation our timeouts allow us to do something cool: even if a request timeout has occured for a given <code>PartRequest</code>, so long as the corresponding <code>HystrixCommand</code> hasn&rsquo;t timed out, we can cache the eventual result of the <code>HystrixCommand</code> so that the next time the same <code>PartRequest</code> is processed by Octoparts, we have a chance of getting a cache hit, which allows us to respond immediately. For more details, see <a href="caching.html">Caching</a></p>
 
         </div>
 

@@ -27,8 +27,8 @@
       <div class="row">
 
         <div class="col-md-3">
-          <div class="sidebar">
-<a href="./">              <h4>TODO Octoparts logo here</h4>
+          <div id="sidebar" style="padding-top: 20px;">
+<a href="./">                <img width="220px" style="padding-left: 15px;" src="img/octo_logo1.png" />
 </a>            
             <ul class="nav nav-pills nav-stacked">
               <li ><a href="getting-started.html">Getting started</a></a></li>
@@ -47,7 +47,57 @@
 
         <div class="col-md-9">
           <h1>Internals</h1>
-          <p>TODO explain about caching (copy and translate from wiki)</p>
+          <h3>Moving pieces</h3>
+
+<p>Octoparts is composed of the following components:</p>
+
+<ul>
+<li>Web app built on the <a href="https://www.playframework.com/">Playframework</a>
+
+<ul>
+<li>Wraps calls to registered endpoints in <a href="https://github.com/Netflix/Hystrix">Hystrix</a> <a href="http://netflix.github.io/Hystrix/javadoc/index.html?com/netflix/hystrix/HystrixCommand.html">commands</a> to guarantee resilience and responsiveness</li>
+<li>Caches endpoint configuration metadata and endpoint results to either EhCached or Memcached</li>
+</ul></li>
+<li><a href="https://github.com/Netflix/Hystrix/tree/master/hystrix-dashboard">Hystrix dashboard</a> for Hystrix stream visualisation, deployed in Tomcat
+
+<ul>
+<li>If multiple Octoparts nodes are used, <a href="https://github.com/Netflix/Turbine/wiki/Getting-Started">Turbine</a> is required for aggregating the Hystrix streams into a single stream to be consumed by the dashboard</li>
+</ul></li>
+<li><a href="http://www.elasticsearch.org/overview/kibana/">Kibana</a> for visualising log entry data
+
+<ul>
+<li>Log data from each Octoparts node is collected and aggregated via <a href="http://www.fluentd.org/">fluentd</a> and stored in <a href="http://www.elasticsearch.org/">ElasticSearch</a></li>
+</ul></li>
+<li><a href="alert-mails.html">Alert Mailer</a> that queries the aforementioned ElasticSearch datastore to monitor errors rates and, if errors surpass configured thresholds, sends alert emails</li>
+</ul>
+
+<h3>Process flow</h3>
+
+<div class="screenshot">
+<a target="_blank" href="img/req_resp_flow.png">    <img width="500px" alt="Request to response process flow diagram" src="img/req_resp_flow.png" />
+</a></div>
+
+<p>When a POST request is sent to the <a href="http://localhost:9000/swagger-ui/#!/1/Dependencies_invocation">endpoints invocation API</a> (TODO: point to deployed Octoparts swagger), it goes through the following process:</p>
+
+<ol>
+<li>The request body is parsed into a JSON object.</li>
+<li>The JSON object is deserialised into an <code>AggregateRequest</code> object.</li>
+<li>The <code>AggregateRequest</code> is processed:
+
+<ol>
+<li>The <code>RequestMeta</code> for the request is extracted to identify common shareable data and to ensure we process the request within the requested timeout duration.</li>
+<li>The <code>PartRequest</code>s contained inside are processed asynchronously in parallel:
+
+<ol>
+<li>Find the configured endpoint data (HTTP address to hit, parameters, cache) that matches the partId of the <code>PartRequest</code>. If none can be found, return an error for this particular <code>PartRequest</code> explaining that the partId provided is not supported.</li>
+<li>If there is a suitable cached <code>PartResponse</code> for the <code>PartRequest</code> (i.e. one that matches all the parameters and is not stale according to the corresponding endpoint configuration; see <a href="caching.html">Caching</a> for more details), return it.</li>
+<li>If there isn&rsquo;t a suitable cached response, wrap an HTTP request to the backend endpoint in a Hystrix Command with the proper thread pool and invoke it. Using the response from the command, generate and cache a PartResponse.</li>
+</ol></li>
+</ol></li>
+<li>All the <code>PartResponse</code>s are gathered into a single <code>AggregateResponse</code> object. <em>Note:</em> <code>PartRequest</code>s that take longer than the default or requested timeout duration to process are mapped to a <code>PartResponse</code> with a timeout error (for more details, see <a href="timeouts.html">Timeouts</a>)</li>
+<li>The <code>AggregateResponse</code> is serialised into a JSON object</li>
+<li>The JSON object is sent as a string in the body of the HTTP response</li>
+</ol>
 
         </div>
 
